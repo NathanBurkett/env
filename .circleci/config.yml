@@ -1,0 +1,57 @@
+version: 2
+jobs:
+  build:
+    docker:
+      - image: circleci/golang:1.11.0
+
+    working_directory: /go/src/github.com/nathanburkett/env
+
+    steps:
+      - checkout
+
+      - run:
+          name: Install 'dep'
+          command: |
+            curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
+
+      - restore_cache:
+          keys:
+            - dep-cache-{{ checksum "Gopkg.lock" }}
+
+      - run:
+          name: Install Go dependencies
+          command: |
+            make install -B
+
+      - save_cache:
+          key: dep-cache-{{ checksum "Gopkg.lock" }}
+          paths:
+            - vendor
+
+      - run:
+          name: Install test dependencies
+          command: |
+            go get -v -t -d ./...
+            go get -u github.com/mattn/goveralls \
+              golang.org/x/tools/cmd/cover \
+              github.com/ory/go-acc \
+              golang.org/x/lint/golint
+
+      - run:
+          name: Run tests
+          command: |
+            make coverage -B
+
+      - run:
+          name: Upload coverage report
+          command: |
+            [ ! -f coverage/output/cover.out ] && echo >&2 "coverage report not found" && exit 1
+            [ -z "$COVERALLS_TOKEN" ] && echo >&2 "COVERALL_TOKEN not found" && exit 1
+            [ ! -f ${GOPATH}/bin/goveralls ] && echo >&2 "goveralls executable not found" && exit 1
+
+            ${GOPATH}/bin/goveralls -service=circle-ci -coverprofile=coverage/output/cover.out
+
+      - run:
+          name: Lint code
+          command: |
+            make lint
